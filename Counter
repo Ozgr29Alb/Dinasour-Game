@@ -1,0 +1,65 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.STD_LOGIC_ARITH.ALL;
+use IEEE.STD_LOGIC_UNSIGNED.ALL;
+use ieee.numeric_std.all;
+
+
+
+entity counter is
+   port(clock : in std_logic;
+        gameOver: in std_logic;
+        reset: in std_logic;
+        q0: out std_logic_vector(3 downto 0);
+		q10: out std_logic_vector(3 downto 0);
+		q100: out std_logic_vector(3 downto 0));
+		
+end counter;
+ 
+architecture Behavioral of counter is
+    signal s0: integer := 0;
+	signal s10: integer := 0;
+	signal s100: integer := 0;
+	
+begin   
+  process(clock)
+		variable prescalerCount: integer := 0;
+		variable prescaler: integer := 25000000;
+    begin
+      if (reset = '1') then
+		s0 <= 0;
+		s10 <= 0;
+		s100 <= 0;
+		
+      elsif(clock = '1' and clock'event) then
+			if prescalerCount >= prescaler then
+					if gameOver='0' then
+						if s100 >= 9 then 
+							s0 <= 0;
+							s10 <= 0;
+							s100 <= 0;
+							
+						else
+							s0 <= s0 + 1;
+							if s0 >= 9 then
+								s10 <= s10 + 1;
+								s0 <= 0;
+								if s10 >= 9 then
+									s100 <= s100 + 1;
+									s10 <= 0;
+									
+								end if;
+							end if;
+						end if;
+					end if;
+
+					prescalerCount := 0;
+				end if;
+				prescalerCount := prescalerCount + 1;
+    end if;
+   end process;
+   q0 <= std_logic_vector(to_unsigned(s0, q0'length));
+	q10 <= std_logic_vector(to_unsigned(s10, q10'length));
+	q100 <= std_logic_vector(to_unsigned(s100, q100'length));
+	
+end Behavioral;
