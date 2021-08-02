@@ -1,0 +1,32 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.std_logic_unsigned.ALL;
+
+entity debounce is
+    Port ( clock : in STD_LOGIC;
+           sensor_out : in STD_LOGIC;
+           pulse : out STD_LOGIC);
+end debounce;
+
+architecture Behavioral of debounce is
+
+SIGNAL cnt: STD_LOGIC_VECTOR (1 DOWNTO 0);
+BEGIN
+  PROCESS (clock,sensor_out)
+  BEGIN 
+   
+   IF (sensor_out = '1') THEN
+      cnt <= "00";
+    ELSIF (clock'EVENT AND clock= '1') THEN
+      IF (cnt /= "11") THEN 
+        cnt <= cnt +1; 
+      END IF;
+    END IF;
+   
+   IF (cnt = "10") AND (sensor_out = '0') THEN
+      pulse <= '1';
+   ELSE pulse <= '0'; 
+   END IF;
+
+  END PROCESS;
+end Behavioral;
