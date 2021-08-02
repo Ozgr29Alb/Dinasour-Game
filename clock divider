@@ -1,0 +1,27 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.numeric_std.all;
+
+
+entity clock_dvd is
+port(
+  clock         : in  std_logic;
+  clk_divQ    : out std_logic);
+end clock_dvd;
+
+architecture Behavioral of clock_dvd is
+signal clkdiv_50: std_logic;
+signal clkdiv_25: std_logic;
+begin
+p_clk_divider: process(clkdiv_50,clock)
+begin  
+    if(rising_edge(clock)) then
+        clkdiv_50   <= not clkdiv_50;
+    end if;
+    if(rising_edge(clkdiv_50)) then
+        clkdiv_25   <= not clkdiv_25;
+    end if;
+end process p_clk_divider;
+clk_divQ    <= clkdiv_25;
+
+end Behavioral;
