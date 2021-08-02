@@ -1,0 +1,386 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.std_logic_unsigned.ALL;
+use IEEE.numeric_std.ALL;
+-- Uncomment the following library declaration if using
+-- arithmetic functions with Signed or Unsigned values
+--use IEEE.NUMERIC_STD.ALL;
+
+-- Uncomment the following library declaration if instantiating
+-- any Xilinx leaf cells in this code.
+--library UNISIM;
+--use UNISIM.VComponents.all;
+
+entity VGA is
+    Port ( clock: inout STD_LOGIC;
+           reset: in std_logic;
+           RGB: out STD_LOGIC_vector (7 downto 0);
+           start: in std_logic;
+           
+           VGA_HS : out STD_LOGIC;
+           VGA_VS : out STD_LOGIC;
+           
+           
+		   segs : out  std_logic_vector (7 downto 0);
+           anodes   : out  std_logic_vector (0 to 3);
+           
+		   jump: in std_logic);
+end VGA;
+architecture Behavioral of VGA is
+    constant Pixels : integer := 16;
+	constant ROWS : integer := 30;
+	constant COLUMNS : integer := 40;
+	constant T_FAC : integer := 100000;
+	constant RAN_WIDTH : integer :=  5;
+
+	
+	constant objectSpeed : integer := 30;
+	constant chrcSpeed : integer := 25;
+	
+    signal clock_Q: std_logic:='0';
+    constant HD: integer :=640;
+    constant HFP: integer :=16;
+    constant HS: integer :=96;
+    constant HBP: integer :=48;
+
+    constant VD: integer :=480;
+    constant VFP: integer :=10;
+    constant VS: integer :=2;
+    constant VBP: integer :=33;
+
+    signal HPOS: integer:=0;   
+    signal VPOS: integer:=0;   
+    
+    signal draw: std_logic:='0';
+
+    
+	signal chrcX: integer := 8;
+	signal chrcY: integer := 24;
+
+    
+	signal resetGame : std_logic := '0';
+	signal objectX_1: integer := COLUMNS;
+	signal objectX_2: integer := COLUMNS + (COLUMNS/2);
+	signal objectX_3: integer := COLUMNS + COLUMNS;
+	signal objectY: integer := 24;
+	
+	
+	signal gameOver : std_logic := '0';
+	signal jumping : std_logic := '0';	
+	signal gameSpeed: integer := 0;
+	signal rand_num : integer := 0;
+
+	
+	signal signalclk, clean_jump : std_logic;
+	signal q0, q10, q100 : std_logic_vector (3 downto 0);
+	signal display1, display2, display3 : std_logic_vector (6 downto 0);
+
+    
+    
+    
+    component clock_dvd is
+			port (clock: in std_logic;
+			      clk_divQ: out std_logic);
+		end component;
+	
+    component debounce
+        port ( clock  : in  std_logic;
+        	   sensor_out  : in  std_logic;
+	     	   pulse : out std_logic
+              );
+    end component;		
+	
+   component counter
+       port ( clock     : in  std_logic; 
+              gameOver : in std_logic;
+              reset: in std_logic; 
+              q0  : out std_logic_vector(3 downto 0);
+			  q10  : out std_logic_vector(3 downto 0);
+			  q100  : out std_logic_vector(3 downto 0));
+   end component;
+	
+	
+   component SegmentDecoder
+       port(clock : in std_logic;
+			bcd : in  std_logic_vector (3 downto 0);
+			seg7 : out  std_logic_vector (6 downto 0));
+   end component;
+   
+   
+   component segment_driver
+       port(display1 : in  std_logic_vector (6 downto 0);
+            display2 : in  std_logic_vector (6 downto 0);
+            display3 : in  std_logic_vector (6 downto 0);
+            display4 : in  std_logic_vector (6 downto 0);
+            clock : in  std_logic;
+        	disp_seg : out  std_logic_vector (6 downto 0);
+        	disp_ena : out  std_logic_vector (3 downto 0));
+   end component;
+
+
+begin
+	segs(0) <= '1';
+
+	
+	JumpDebo: debounce port map (clock => signalclk,
+							 sensor_out => jump,
+							 pulse => clean_jump);
+
+	SegClock: clock_dvd port map (clock => clock,
+							      clk_divQ => signalclk);
+									
+	ScoreCounter: counter
+		port map(	clock => clock,
+					gameOver => gameOver,
+					reset => resetGame, 
+					q0 => q0,
+					q10 => q10,
+					q100 => q100);
+					
+						
+	Digit1: SegmentDecoder 
+		port map (	clock => clock,
+					bcd => q0,
+					seg7 => display1);
+												
+	Digit2: SegmentDecoder
+		port map (	clock => clock,
+					bcd => q10,
+              		seg7 => display2);
+												
+   Digit3: SegmentDecoder 
+		port map (	clock => clock,
+					bcd => q100,
+              		seg7 => display3);
+												
+   Driver: segment_driver
+		port map (	display1 => display1,
+					display2 => display2,
+					display3 => display3,
+					display4 => "1111111",
+					clock => signalclk,
+					disp_seg => segs(7 downto 1),
+					disp_ena => anodes);	
+		
+		
+        
+
+        
+    u1:  clock_dvd port map (clock => clock,   
+                             clk_divQ => clock_Q);                  
+
+
+count: process(clock_Q,reset)
+
+begin
+    if (reset='1') then
+        HPOS<=0;
+    elsif (clock_Q'event and clock_Q='1') then
+        if (HPOS = (HD + HFP + HS + HBP)) then
+            HPOS<=0;
+            if (VPOS = VD+VFP+VS+VBP) then 
+                VPOS<=0;                                    
+            else                           
+                VPOS<=VPOS+1;                       
+            end if;
+        else
+            HPOS<=HPOS+1;
+        end if;   
+    end if;         
+end process;    
+
+horizontal_synch: process(clock_Q,reset,HPOS)
+begin
+    if (reset='1') then 
+        VGA_HS<='0';        
+    elsif (clock_Q'event and clock_Q='1') then  
+        if ((HPOS <= (HD + HFP)) OR (HPOS > (HD + HFP + HS)) ) then     
+            VGA_HS<='1';                              
+        else             
+            VGA_HS<='0';
+        end if;          
+    end if;
+end process;
+
+vertical_synch: process(clock_Q,reset,VPOS)                                   
+begin                                                                       
+    if (reset='1') then                                                     
+        VGA_VS<='0';                                                            
+    elsif (clock_Q'event and clock_Q='1') then                            
+        if ((VPOS <= (VD + VFP)) OR (VPOS > (VD + VFP + VS)) ) then         
+            VGA_VS<='1';                                                    
+        else                                                                
+            VGA_VS<='0';                                                    
+        end if;                                                             
+    end if;                                                                 
+end process;                                                                
+
+
+draw_control: process(clock_Q,reset,HPOS,VPOS)
+begin
+    if (reset='1') then                                                     
+        draw <='0';                                                            
+    elsif (clock_Q'event and clock_Q='1') then                            
+        if (HPOS <= HD) AND (VPOS <= VD) then
+            draw <= '1';                                                    
+        else                                                                
+            draw <= '0';                                                
+        end if;                                                             
+    end if;            
+end process;
+
+drawing: process(clock_Q,reset,HPOS,VPOS,draw)
+	
+	
+
+begin
+    if (reset='1') then                                                     
+        RGB <="00000000";
+                                                                  
+    elsif (clock_Q'event and clock_Q='1') then                            
+        if (draw = '1') then
+---------------------------------------------------------------------------------------
+            RGB <= "00000000";
+            
+			if ((HPOS / Pixels) = objectX_1) and ((VPOS / Pixels) = objectY) then 
+				RGB <= "00011100";
+			end if;
+			
+			if ((HPOS / Pixels) = objectX_2) and ((VPOS / Pixels) = objectY) then 
+				RGB <= "00011100";
+			end if;
+			
+			if ((HPOS / Pixels) = objectX_3) and ((VPOS / Pixels) = objectY) then 
+				RGB <= "00011100";
+			end if;
+ 			
+			if ((HPOS / Pixels) = chrcX) and ((VPOS / Pixels) = chrcY) then
+				if (gameOver = '1') then
+					RGB <= "00000000";
+				else 
+					RGB <= "11100000";
+				
+				end if;
+			end if;
+            
+			
+ -------------------------------------------------------------------------------- 
+        else                                                                
+            RGB <="00000000";                                               
+        end if;                                                             
+    end if;            
+end process;
+
+	gameLogic: process(clock, clean_jump)
+		variable gameOver: std_logic := '0';
+
+		variable chrcCount: integer := 0;
+		variable objectCount: integer := 0;
+		variable waitCount: integer := 0;
+		variable waitTime: integer := T_FAC*40*25;
+
+		
+		variable rand_temp : std_logic_vector(RAN_WIDTH - 1 downto 0):=(RAN_WIDTH - 1 => '1',others => '0');
+		variable temp : std_logic := '0';
+	begin
+		if clock'event and clock = '1' then
+
+			
+			temp := rand_temp(RAN_WIDTH - 1) xor rand_temp(RAN_WIDTH - 2);
+			rand_temp(RAN_WIDTH - 1 downto 1) := rand_temp(RAN_WIDTH - 2 downto 0);
+			rand_temp(0) := temp;
+		    rand_num <= to_integer(unsigned(rand_temp));
+
+
+		    
+		    if gameSpeed < 15  and q0 = "0101" then
+		    	gameSpeed <= gameSpeed + 5;
+		    end if;
+
+
+			
+			if clean_jump = '1' and chrcY = 24 then
+				if (gameOver = '0') then
+					jumping <= '1';
+					chrcCount := 0;					
+				end if;		
+			end if;
+			
+			
+			
+			if chrcCount >= T_FAC * chrcSpeed then
+				if jumping = '1' then
+					if (chrcY > 20) then
+						chrcY <= chrcY - 1;
+					else
+						jumping <= '0';
+					end if;
+					chrcCount := 0;
+				else
+					if (chrcY < 24) then
+						chrcY <= chrcY + 1;
+					end if;
+					chrcCount := 0;
+				end if;
+			end if;
+			chrcCount := chrcCount + 1;
+
+
+			
+			if (chrcY = objectY) and ((chrcX = objectX_1) or (chrcX = objectX_2) or (chrcX = objectX_3)) then
+				gameOver := '1';
+			end if;
+			
+			if gameOver = '1' then
+			    resetGame<='0';
+			end if;
+			
+			if start = '1' then
+			    chrcX <= 8;
+					chrcY <= 24;
+					gameOver := '0';
+			        resetGame<='1';
+			end if;
+			--if gameOver = '1' then
+				--if jump ='1' then
+				    --chrcX <= 8;
+					--chrcY <= 24;
+					--gameOver := '0';
+				    --resetGame <= '1';
+				--elsif jump ='0' then
+				    --chrcX <= 8;
+					--chrcY <= 24;
+					--gameOver:='1';
+					--resetGame<='0';					
+				--end if;			
+			--end if;
+
+			
+			if resetGame = '1' then
+				objectX_1 <= COLUMNS;
+				objectX_2 <= COLUMNS + (COLUMNS/2);
+				objectX_3 <= COLUMNS + COLUMNS;
+				gameSpeed <= 0;
+				resetGame <= '0';
+			else
+			
+				if (gameOver = '0') and (objectCount >= T_FAC * objectSpeed - gameSpeed) then
+					if (objectX_1 <= 0) then
+						objectX_1 <= COLUMNS + rand_num;
+					elsif (objectX_2 <= 0) then
+						objectX_2 <= COLUMNS + rand_num;
+					elsif (objectX_3 <= 0) then
+						objectX_3 <= COLUMNS + rand_num;
+					else
+						objectX_1 <= objectX_1 - 1;
+						objectX_2 <= objectX_2 - 1;
+						objectX_3 <= objectX_3 - 1;
+					end if;
+					objectCount := 0;
+				end if;
+				objectCount := objectCount + 1;
+			end if;	
+
+		end if;
+	end process;
+end Behavioral;
